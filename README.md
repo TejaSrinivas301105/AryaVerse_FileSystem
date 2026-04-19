@@ -24,7 +24,7 @@ Interaction flow:
 - Node.js 20+
 - npm 10+
 - Supabase project (URL + service role key)
-- Gmail app password (if email notifications are enabled)
+- SMTP credentials (Lark SMTP supported)
 
 ## Quick Start
 
@@ -84,29 +84,37 @@ cloud-core/
 - Frontend setup and architecture: `Frontend/README.md`
 - Backend setup and architecture: `Backend/README.md`
 
-## Vercel Deployment (Frontend)
+## Vercel Deployment
 
-This repository is configured for **frontend-only deployment on Vercel**. The backend should be deployed separately (for example: Render, Railway, Fly.io, VM, or another Vercel project reworked for serverless functions).
+This repository is configured for **multi-service deployment on Vercel** using `experimentalServices` in `vercel.json`:
+
+- `frontend` service from `Frontend/`
+- `backend` service from `Backend/`
 
 ### Config file
 
 `vercel.json` at the repo root defines:
 
-- `buildCommand`: builds the Vite app from `Frontend/`
-- `outputDirectory`: `Frontend/dist`
-- rewrite `/api/:path*` to external backend domain
-- rewrite all other routes to `/index.html` for SPA routing
+- a frontend service for SPA routes
+- a backend service for API routes
+- rewrite mapping from `/api/:path*` to backend service endpoint
 
 ### Required Vercel Environment Variables
 
-For the current frontend codebase, **no environment variables are required for a successful Vercel build**.
+Required for backend runtime on Vercel:
 
-Required in Vercel dashboard:
-
-- None
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `EMAIL`
+- `PASSWORD`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_SECURE`
+- `EMAIL_FROM`
+- `FRONTEND_URL`
 
 ### Deployment checklist
 
-1. Set your backend public URL in `vercel.json` by replacing `https://YOUR_BACKEND_DOMAIN`.
+1. Add all required Vercel environment variables listed above.
 2. Deploy this repository to Vercel.
-3. Ensure backend CORS allows your Vercel frontend domain in `Backend/.env` (`FRONTEND_URL`).
+3. Ensure `FRONTEND_URL` exactly matches your live domain (for example, `https://www.beingcosmic.com`).

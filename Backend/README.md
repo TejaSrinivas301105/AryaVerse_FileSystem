@@ -9,7 +9,7 @@ Node.js/Express REST API for authentication, file uploads, folder management, ac
 - Database: Supabase Postgres
 - Object Storage: Supabase Storage (`files` bucket)
 - Authentication: Supabase Auth JWT validation
-- Email: Nodemailer (Gmail SMTP)
+- Email: Nodemailer (SMTP, Lark-compatible)
 - File Upload Handling: Multer (memory storage)
 - Rate Limiting: `express-rate-limit`
 
@@ -20,7 +20,7 @@ Node.js/Express REST API for authentication, file uploads, folder management, ac
 - Node.js 20+ recommended
 - npm 10+ recommended
 - A Supabase project
-- Gmail app password if email notifications are needed
+- SMTP mailbox credentials if email notifications are needed
 
 ### 2. Install dependencies
 
@@ -37,17 +37,47 @@ Create `Backend/.env` from `Backend/.env.example`:
 SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-EMAIL=your-email@gmail.com
-PASSWORD=your-gmail-app-password
+EMAIL=your-email@your-domain.com
+PASSWORD=your-imap-smtp-password
+
+SMTP_HOST=smtp.larksuite.com
+SMTP_PORT=465
+SMTP_SECURE=true
+EMAIL_FROM=your-email@your-domain.com
 
 FRONTEND_URL=http://localhost:5173
 ```
 
+Environment notes:
+
+- `FRONTEND_URL` must exactly match your frontend origin (no trailing slash). Example production value: `https://www.beingcosmic.com`.
+- For Lark SMTP:
+- host: `smtp.larksuite.com`
+- SSL port: `465` with `SMTP_SECURE=true`
+- STARTTLS port: `587` with `SMTP_SECURE=false`
+- `EMAIL` and `PASSWORD` should be the SMTP login credentials for your sending mailbox.
+- `EMAIL_FROM` is the visible sender address in outbound notifications.
+
 Variable usage in code:
 
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`: Supabase client initialization in `src/config/supabase.js`
-- `EMAIL`, `PASSWORD`: Gmail transporter in `src/util/Email_notify.js`
+- `EMAIL`, `PASSWORD`: SMTP auth credentials in `src/util/Email_notify.js`
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `EMAIL_FROM`: SMTP transport setup (defaults to Lark SMTP host if unset)
 - `FRONTEND_URL`: CORS allowlist in `index.js`
+
+### 3.1 Vercel Environment Variables (Production)
+
+When deployed on Vercel, add these variables in Project Settings -> Environment Variables:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `EMAIL`
+- `PASSWORD`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_SECURE`
+- `EMAIL_FROM`
+- `FRONTEND_URL`
 
 ### 4. Initialize database
 

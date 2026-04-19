@@ -17,14 +17,23 @@ React single-page application for login/register and role-based dashboards (admi
 ### 1. Prerequisites
 
 - Node.js 20+ recommended
-- npm 10+ recommended
+- npm 10+ or pnpm 10+ recommended
 - Backend API running locally at `http://localhost:3000` (default expectation)
 
 ### 2. Install dependencies
 
+npm:
+
 ```bash
 cd Frontend
 npm install
+```
+
+pnpm:
+
+```bash
+cd Frontend
+pnpm install
 ```
 
 ### 3. Environment variables
@@ -35,17 +44,34 @@ Why: API calls use a fixed base path (`/api`) in `src/api.js`, and Vite dev serv
 
 ### 4. Run locally
 
+npm:
+
 ```bash
 npm run dev
+```
+
+pnpm:
+
+```bash
+pnpm dev
 ```
 
 App will run on `http://localhost:5173`.
 
 ### 5. Production build
 
+npm:
+
 ```bash
 npm run build
 npm run preview
+```
+
+pnpm:
+
+```bash
+pnpm build
+pnpm preview
 ```
 
 Build output directory: `dist/`.

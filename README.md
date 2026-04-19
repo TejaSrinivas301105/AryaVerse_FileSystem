@@ -22,7 +22,7 @@ Interaction flow:
 ## Prerequisites
 
 - Node.js 20+
-- npm 10+
+- npm 10+ or pnpm 10+
 - Supabase project (URL + service role key)
 - SMTP credentials (Lark SMTP supported)
 
@@ -32,9 +32,18 @@ From the repository root:
 
 ### 1. Install dependencies for both apps
 
+npm:
+
 ```bash
 npm --prefix Backend install
 npm --prefix Frontend install
+```
+
+pnpm:
+
+```bash
+pnpm --prefix Backend install
+pnpm --prefix Frontend install
 ```
 
 ### 2. Configure backend environment
@@ -47,7 +56,12 @@ Then edit `Backend/.env` with your Supabase and email values.
 
 ### 3. Initialize database schema
 
-Run the SQL in `Backend/src/Schema.sql` inside Supabase SQL Editor.
+Run both migrations in Supabase SQL Editor, in this order:
+
+1. `Backend/migrations/20260419114328_init_cloud_core_schema.sql`
+2. `Backend/migrations/20260419120310_optimize_rls_and_fk_indexes.sql`
+
+`Backend/src/Schema.sql` mirrors the same schema as a single reference file.
 
 ### 4. Start backend and frontend
 
@@ -55,14 +69,30 @@ Use two terminals from the root:
 
 Terminal 1:
 
+npm:
+
 ```bash
 npm --prefix Backend run dev
 ```
 
+pnpm:
+
+```bash
+pnpm --prefix Backend run dev
+```
+
 Terminal 2:
+
+npm:
 
 ```bash
 npm --prefix Frontend run dev
+```
+
+pnpm:
+
+```bash
+pnpm --prefix Frontend run dev
 ```
 
 Default local URLs:
@@ -111,10 +141,11 @@ Required for backend runtime on Vercel:
 - `SMTP_PORT`
 - `SMTP_SECURE`
 - `EMAIL_FROM`
-- `FRONTEND_URL`
+- `FRONTEND_URLS` (recommended, comma-separated)
+- `FRONTEND_URL` (legacy single origin, still supported)
 
 ### Deployment checklist
 
 1. Add all required Vercel environment variables listed above.
 2. Deploy this repository to Vercel.
-3. Ensure `FRONTEND_URL` exactly matches your live domain (for example, `https://www.beingcosmic.com`).
+3. Set `FRONTEND_URLS` to include all allowed frontend origins. Example: `https://beingcosmic.com,https://www.beingcosmic.com`.

@@ -8,8 +8,27 @@ import supabase, { getMissingSupabaseEnvVars } from './src/config/supabase.js'
 dotenv.config()
 
 const app = express()
+
+const defaultAllowedOrigins = [
+    'http://localhost:5173',
+    'https://beingcosmic.com',
+    'https://www.beingcosmic.com'
+]
+
+const envAllowedOrigins = (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean)
+
+const allowedOrigins = [...new Set([...defaultAllowedOrigins, ...envAllowedOrigins])]
+
 app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: (origin, callback) => {
+        // Allow non-browser clients and same-origin requests without an Origin header.
+        if (!origin) return callback(null, true)
+        if (allowedOrigins.includes(origin)) return callback(null, true)
+        return callback(new Error('Not allowed by CORS'))
+    },
     credentials: true
 }))
 app.use(express.json())

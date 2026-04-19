@@ -18,15 +18,24 @@ Node.js/Express REST API for authentication, file uploads, folder management, ac
 ### 1. Prerequisites
 
 - Node.js 20+ recommended
-- npm 10+ recommended
+- npm 10+ or pnpm 10+ recommended
 - A Supabase project
 - SMTP mailbox credentials if email notifications are needed
 
 ### 2. Install dependencies
 
+npm:
+
 ```bash
 cd Backend
 npm install
+```
+
+pnpm:
+
+```bash
+cd Backend
+pnpm install
 ```
 
 ### 3. Configure environment
@@ -46,11 +55,14 @@ SMTP_SECURE=true
 EMAIL_FROM=your-email@your-domain.com
 
 FRONTEND_URL=http://localhost:5173
+FRONTEND_URLS=http://localhost:5173,https://beingcosmic.com,https://www.beingcosmic.com
 ```
 
 Environment notes:
 
-- `FRONTEND_URL` must exactly match your frontend origin (no trailing slash). Example production value: `https://www.beingcosmic.com`.
+- CORS allowlist defaults already include `http://localhost:5173`, `https://beingcosmic.com`, and `https://www.beingcosmic.com`.
+- `FRONTEND_URLS` (recommended) accepts comma-separated origins to extend/override allowlist behavior.
+- `FRONTEND_URL` is still supported as a legacy single-origin override.
 - For Lark SMTP:
 - host: `smtp.larksuite.com`
 - SSL port: `465` with `SMTP_SECURE=true`
@@ -63,7 +75,7 @@ Variable usage in code:
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`: Supabase client initialization in `src/config/supabase.js`
 - `EMAIL`, `PASSWORD`: SMTP auth credentials in `src/util/Email_notify.js`
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `EMAIL_FROM`: SMTP transport setup (defaults to Lark SMTP host if unset)
-- `FRONTEND_URL`: CORS allowlist in `index.js`
+- `FRONTEND_URLS` / `FRONTEND_URL`: CORS allowlist inputs in `index.js`
 
 ### 3.1 Vercel Environment Variables (Production)
 
@@ -77,11 +89,17 @@ When deployed on Vercel, add these variables in Project Settings -> Environment 
 - `SMTP_PORT`
 - `SMTP_SECURE`
 - `EMAIL_FROM`
-- `FRONTEND_URL`
+- `FRONTEND_URLS` (recommended)
+- `FRONTEND_URL` (legacy)
 
 ### 4. Initialize database
 
-Run `src/Schema.sql` in Supabase SQL Editor.
+Run the migrations in order:
+
+1. `migrations/20260419114328_init_cloud_core_schema.sql`
+2. `migrations/20260419120310_optimize_rls_and_fk_indexes.sql`
+
+`src/Schema.sql` mirrors that migration and is kept as a readable schema reference.
 
 This creates:
 
@@ -92,8 +110,16 @@ This creates:
 
 ### 5. Run locally
 
+npm:
+
 ```bash
 npm run dev
+```
+
+pnpm:
+
+```bash
+pnpm dev
 ```
 
 API base URL: `http://localhost:3000`.

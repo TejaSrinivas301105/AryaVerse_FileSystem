@@ -14,13 +14,17 @@ export const register = async (req, res) => {
         email,
         password,
         email_confirm: true,        // skip email confirmation for testing
-        user_metadata: { role }
+        app_metadata: { role }
     })
 
     if (error) return res.status(400).json({ error: error.message })
 
     // Sync into public users table
-    await supabase.from('users').upsert({ id: data.user.id, email, role })
+    const { error: upsertError } = await supabase
+        .from('users')
+        .upsert({ id: data.user.id, email, role })
+
+    if (upsertError) return res.status(500).json({ error: upsertError.message })
 
     res.status(201).json({ message: 'User registered', user_id: data.user.id })
 }
@@ -36,9 +40,17 @@ export const login = async (req, res) => {
 
     if (error) return res.status(401).json({ error: error.message })
 
+    const { data: userRow } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', data.user.id)
+        .single()
+
+    const resolvedRole = userRow?.role || data.user.app_metadata?.role || 'employee'
+
     res.json({
         access_token: data.session.access_token,
-        role: data.user.user_metadata.role,
+        role: resolvedRole,
         user_id: data.user.id
     })
 }

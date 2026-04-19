@@ -2,10 +2,15 @@ import supabase from '../config/supabase.js'
 
 // Register — role must be 'admin' or 'employee'
 export const register = async (req, res) => {
-    const { email, password, role } = req.body
+    const email = req.body?.email?.trim()?.toLowerCase()
+    const password = req.body?.password
+    const role = req.body?.role || 'employee'
 
-    if (!email || !password || !role) 
-        return res.status(400).json({ error: 'email, password and role are required' })
+    if (!email || !password)
+        return res.status(400).json({ error: 'email and password are required' })
+
+    if (typeof password !== 'string' || password.length < 6)
+        return res.status(400).json({ error: 'password must be at least 6 characters' })
 
     if (!['admin', 'employee'].includes(role))
         return res.status(400).json({ error: 'role must be admin or employee' })
@@ -17,7 +22,15 @@ export const register = async (req, res) => {
         app_metadata: { role }
     })
 
-    if (error) return res.status(400).json({ error: error.message })
+    if (error) {
+        const message = String(error.message || '').toLowerCase()
+
+        if (message.includes('already') || message.includes('registered') || message.includes('exists')) {
+            return res.status(409).json({ error: 'User already exists. Please login instead.' })
+        }
+
+        return res.status(400).json({ error: error.message || 'Failed to register user' })
+    }
 
     // Sync into public users table
     const { error: upsertError } = await supabase

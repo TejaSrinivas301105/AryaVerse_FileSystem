@@ -28,7 +28,7 @@ export default function Register() {
                 <h2>Register</h2>
                 <form onSubmit={handleSubmit}>
                     <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
-                    <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required />
+                    <input type="password" placeholder="Password" minLength={6} value={password} onChange={e => setPassword(e.target.value)} required />
                     <select value={role} onChange={e => setRole(e.target.value)}>
                         <option value="employee">Employee</option>
                     </select>

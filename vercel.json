@@ -1,15 +1,21 @@
 {
   "version": 2,
-  "buildCommand": "cd Frontend && npm run build",
-  "outputDirectory": "Frontend/dist",
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://YOUR_BACKEND_DOMAIN/api/:path*"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "destination": "/_/backend/api/:path*"
     }
-  ]
+  ],
+  "experimentalServices": {
+    "frontend": {
+      "entrypoint": "Frontend",
+      "routePrefix": "/",
+      "framework": "vite"
+    },
+    "backend": {
+      "entrypoint": "Backend",
+      "routePrefix": "/_/backend",
+      "framework": "express"
+    }
+  }
 }

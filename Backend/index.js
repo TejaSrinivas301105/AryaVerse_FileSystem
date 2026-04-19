@@ -3,7 +3,7 @@ import dotenv from 'dotenv'
 import cors from 'cors'
 import rateLimit from 'express-rate-limit'
 import fileRoutes from './src/Routes/File_upload.js'
-import supabase from './src/config/supabase.js'
+import supabase, { getMissingSupabaseEnvVars } from './src/config/supabase.js'
 
 dotenv.config()
 
@@ -53,9 +53,24 @@ app.use('/api/register', authLimiter)
 app.use('/api/upload', uploadLimiter)
 app.use('/api', generalLimiter)
 
+app.use('/api', (req, res, next) => {
+    const missingVars = getMissingSupabaseEnvVars()
+    if (missingVars.length > 0) {
+        return res.status(500).json({
+            error: 'Server configuration missing required environment variables.',
+            missing: missingVars
+        })
+    }
+    next()
+})
+
 app.use('/api', fileRoutes)
 
 async function testSupabaseConnection() {
+    if (!supabase) {
+        console.error('Supabase connection skipped: missing required environment variables')
+        return
+    }
     const { error } = await supabase.from('users').select('id').limit(1)
     if (error) {
         console.error('Supabase connection failed:', error.message)

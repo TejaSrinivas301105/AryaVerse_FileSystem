@@ -4,20 +4,31 @@ const token = () => localStorage.getItem('token')
 
 const headers = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` })
 
+const safeJson = async (res) => {
+    const text = await res.text()
+    try {
+        return JSON.parse(text)
+    } catch {
+        return {
+            error: text || `Request failed with status ${res.status}`
+        }
+    }
+}
+
 const handleResponse = async (res) => {
     if (res.status === 401) {
         localStorage.clear()
         window.location.href = '/'
         return { error: 'Session expired. Please login again.' }
     }
-    return res.json()
+    return safeJson(res)
 }
 
 export const register = (email, password, role) =>
-    fetch(`${BASE}/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, role }) }).then(r => r.json())
+    fetch(`${BASE}/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, role }) }).then(handleResponse)
 
 export const login = (email, password) =>
-    fetch(`${BASE}/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) }).then(r => r.json())
+    fetch(`${BASE}/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) }).then(handleResponse)
 
 export const uploadFiles = (formData) =>
     fetch(`${BASE}/upload`, { method: 'POST', headers: { Authorization: `Bearer ${token()}` }, body: formData }).then(handleResponse)

@@ -1,18 +1,25 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { uploadFiles, getPendingRequests, approveRequest, rejectRequest, getAllFiles, accessFile } from '../api'
+import { uploadFiles, getPendingRequests, approveRequest, rejectRequest, getAllFiles, accessFile, deleteFile, createFolder, getFolders } from '../api'
 import { useAuth } from '../AuthContext'
 
 export default function AdminDashboard() {
     const [files, setFiles] = useState([])
-    const [folderId, setFolderId] = useState('')
+    const [uploadMode, setUploadMode] = useState('files') // 'files' | 'folder'
+    const [folderFiles, setFolderFiles] = useState([])
     const [requests, setRequests] = useState([])
     const [allFiles, setAllFiles] = useState([])
+    const [folders, setFolders] = useState([])
+    const [selectedFolderId, setSelectedFolderId] = useState('')
+    const [newFolderName, setNewFolderName] = useState('')
     const [uploadResult, setUploadResult] = useState(null)
     const [duration, setDuration] = useState(86400000)
     const [msg, setMsg] = useState('')
     const [loading, setLoading] = useState(false)
     const [previewFile, setPreviewFile] = useState(null)
+    const [page, setPage] = useState(1)
+    const [pagination, setPagination] = useState(null)
+    const [activeFolder, setActiveFolder] = useState(null)
     const { logout, role } = useAuth()
     const navigate = useNavigate()
 
@@ -21,33 +28,67 @@ export default function AdminDashboard() {
         setRequests(data.requests || [])
     }
 
-    const fetchAllFiles = async () => {
-        const data = await getAllFiles()
+    const fetchAllFiles = async (p = 1) => {
+        const data = await getAllFiles(p, 20)
         setAllFiles(data.files || [])
+        setPagination(data.pagination || null)
+    }
+
+    const fetchFolders = async () => {
+        const data = await getFolders()
+        setFolders(data.folders || [])
     }
 
     useEffect(() => {
-        if (!role || role !== 'admin') {
-            navigate('/')
-            return
-        }
+        if (!role || role !== 'admin') { navigate('/'); return }
         fetchRequests()
-        fetchAllFiles()
+        fetchAllFiles(1)
+        fetchFolders()
     }, [role])
+
+    const handlePageChange = (newPage) => {
+        setPage(newPage)
+        fetchAllFiles(newPage)
+    }
 
     const handleUpload = async (e) => {
         e.preventDefault()
-        if (files.length === 0) return setMsg('Select at least one file')
+        const selectedFiles = uploadMode === 'folder' ? folderFiles : files
+        if (selectedFiles.length === 0) return setMsg('Select at least one file')
         setLoading(true)
         setMsg('')
         const formData = new FormData()
-        Array.from(files).forEach(f => formData.append('files', f))
-        if (folderId) formData.append('folder_id', folderId)
+        Array.from(selectedFiles).forEach(f => formData.append('files', f))
+        // For folder upload, send relative paths so backend can auto-create folders
+        if (uploadMode === 'folder') {
+            const paths = Array.from(selectedFiles).map(f => f.webkitRelativePath)
+            formData.append('relative_paths', JSON.stringify(paths))
+        } else {
+            if (selectedFolderId) formData.append('folder_id', selectedFolderId)
+        }
         const data = await uploadFiles(formData)
         setLoading(false)
         setUploadResult(data.files || [])
         setMsg('Upload complete')
-        fetchAllFiles()
+        fetchAllFiles(page)
+        fetchFolders()
+    }
+
+    const handleCreateFolder = async (e) => {
+        e.preventDefault()
+        if (!newFolderName.trim()) return setMsg('Enter a folder name')
+        const data = await createFolder(newFolderName.trim())
+        if (data.error) return setMsg(data.error)
+        setMsg(`Folder "${data.folder.folder_name}" created`)
+        setNewFolderName('')
+        fetchFolders()
+    }
+
+    const handleDelete = async (file_id, file_name) => {
+        if (!window.confirm(`Delete "${file_name}"? This cannot be undone.`)) return
+        const data = await deleteFile(file_id)
+        setMsg(data.message || data.error)
+        fetchAllFiles(page)
     }
 
     const handleApprove = async (request_id) => {
@@ -72,7 +113,20 @@ export default function AdminDashboard() {
     const isImage = (url) => /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url)
     const isVideo = (url) => /\.(mp4|webm|ogg)$/i.test(url)
 
-    // Group files by folder
+    const getFileIcon = (name) => {
+        const ext = name.split('.').pop().toLowerCase()
+        if (['jpg','jpeg','png','gif','webp','svg'].includes(ext)) return '🖼️'
+        if (['mp4','webm','ogg'].includes(ext)) return '🎬'
+        if (['mp3','wav'].includes(ext)) return '🎵'
+        if (['pdf'].includes(ext)) return '📕'
+        if (['doc','docx'].includes(ext)) return '📝'
+        if (['xls','xlsx'].includes(ext)) return '📊'
+        if (['ppt','pptx'].includes(ext)) return '📋'
+        if (['zip'].includes(ext)) return '🗜️'
+        if (['csv','txt'].includes(ext)) return '📄'
+        return '📎'
+    }
+
     const grouped = allFiles.reduce((acc, f) => {
         const key = f.folders?.folder_name || 'No Folder'
         if (!acc[key]) acc[key] = []
@@ -89,12 +143,69 @@ export default function AdminDashboard() {
 
             {msg && <p className="msg">{msg}</p>}
 
-            {/* Upload Section */}
+            {/* Create Folder */}
+            <div className="card">
+                <h3>Create Folder</h3>
+                <form onSubmit={handleCreateFolder}>
+                    <input
+                        type="text"
+                        placeholder="Folder name e.g. Project Docs"
+                        value={newFolderName}
+                        onChange={e => setNewFolderName(e.target.value)}
+                    />
+                    <button type="submit">Create Folder</button>
+                </form>
+                {folders.length > 0 && (
+                    <div className="folder-list">
+                        {folders.map(f => (
+                            <span key={f.id} className="folder-tag">📁 {f.folder_name}</span>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Upload Files */}
             <div className="card">
                 <h3>Upload Files</h3>
+                <div className="upload-tabs">
+                    <button
+                        className={`tab-btn ${uploadMode === 'files' ? 'active' : ''}`}
+                        onClick={() => setUploadMode('files')}
+                        type="button"
+                    >📄 Files</button>
+                    <button
+                        className={`tab-btn ${uploadMode === 'folder' ? 'active' : ''}`}
+                        onClick={() => setUploadMode('folder')}
+                        type="button"
+                    >📁 Folder</button>
+                </div>
                 <form onSubmit={handleUpload}>
-                    <input type="file" multiple onChange={e => setFiles(e.target.files)} />
-                    <input type="text" placeholder="Folder ID (optional)" value={folderId} onChange={e => setFolderId(e.target.value)} />
+                    {uploadMode === 'files' ? (
+                        <>
+                            <input type="file" multiple onChange={e => setFiles(e.target.files)} />
+                            <select value={selectedFolderId} onChange={e => setSelectedFolderId(e.target.value)}>
+                                <option value="">No Folder</option>
+                                {folders.map(f => (
+                                    <option key={f.id} value={f.id}>{f.folder_name}</option>
+                                ))}
+                            </select>
+                        </>
+                    ) : (
+                        <>
+                            <input
+                                type="file"
+                                webkitdirectory=""
+                                directory=""
+                                multiple
+                                onChange={e => setFolderFiles(e.target.files)}
+                            />
+                            {folderFiles.length > 0 && (
+                                <p className="folder-upload-info">
+                                    📁 {folderFiles[0]?.webkitRelativePath.split('/')[0]} &mdash; {folderFiles.length} file(s) selected
+                                </p>
+                            )}
+                        </>
+                    )}
                     <button type="submit" disabled={loading}>{loading ? 'Uploading...' : 'Upload'}</button>
                 </form>
                 {uploadResult && (
@@ -112,29 +223,63 @@ export default function AdminDashboard() {
             {/* All Files Browser */}
             <div className="card">
                 <div className="card-header">
-                    <h3>All Files</h3>
-                    <button className="refresh-btn" onClick={fetchAllFiles}>Refresh</button>
+                    <h3>All Files {pagination && <span className="pagination-info">({pagination.total} total)</span>}</h3>
+                    <div className="file-browser-controls">
+                        <button className="refresh-btn" onClick={() => fetchAllFiles(page)}>↻ Refresh</button>
+                    </div>
                 </div>
                 {allFiles.length === 0 ? (
                     <p className="empty">No files uploaded yet</p>
                 ) : (
-                    Object.entries(grouped).map(([folder, folderFiles]) => (
-                        <div key={folder} className="folder-group">
-                            <p className="folder-label">📁 {folder}</p>
-                            <div className="file-grid">
-                                {folderFiles.map(f => (
-                                    <div key={f.id} className="file-card">
-                                        <p className="file-name">{f.file_name}</p>
-                                        <p className="file-id">ID: {f.id}</p>
-                                        <div className="file-actions">
-                                            <button className="access-btn" onClick={() => handlePreview(f.id)}>View</button>
-                                            <a href={f.file_url} target="_blank" rel="noreferrer" className="download-btn">Download</a>
+                    <div className="file-browser">
+                        {/* Folder Sidebar */}
+                        <div className="folder-sidebar">
+                            <p className="sidebar-title">Folders</p>
+                            <div
+                                className={`sidebar-folder ${!activeFolder ? 'active' : ''}`}
+                                onClick={() => setActiveFolder(null)}
+                            >🗂 All Files</div>
+                            {Object.keys(grouped).map(folder => (
+                                <div
+                                    key={folder}
+                                    className={`sidebar-folder ${activeFolder === folder ? 'active' : ''}`}
+                                    onClick={() => setActiveFolder(folder)}
+                                >📁 {folder}</div>
+                            ))}
+                        </div>
+
+                        {/* File List */}
+                        <div className="file-browser-main">
+                            <div className="file-list-header">
+                                <span>Name</span>
+                                <span>Actions</span>
+                            </div>
+                            {(activeFolder ? grouped[activeFolder] || [] : allFiles).map(f => (
+                                <div key={f.id} className="file-row">
+                                    <div className="file-row-name">
+                                        <span className="file-type-icon">{getFileIcon(f.file_name)}</span>
+                                        <div>
+                                            <p className="file-row-title">{f.file_name}</p>
+                                            <p className="file-row-folder">📁 {f.folders?.folder_name || 'No Folder'}</p>
                                         </div>
                                     </div>
-                                ))}
-                            </div>
+                                    <div className="file-row-actions">
+                                        <button className="icon-btn view" onClick={() => handlePreview(f.id)} title="Preview">👁</button>
+                                        <a href={f.file_url} target="_blank" rel="noreferrer" className="icon-btn download" title="Download">⬇</a>
+                                        <button className="icon-btn delete" onClick={() => handleDelete(f.id, f.file_name)} title="Delete">🗑</button>
+                                    </div>
+                                </div>
+                            ))}
+
+                            {pagination && pagination.totalPages > 1 && (
+                                <div className="pagination">
+                                    <button className="page-btn" disabled={page === 1} onClick={() => handlePageChange(page - 1)}>← Prev</button>
+                                    <span className="page-info">Page {page} of {pagination.totalPages}</span>
+                                    <button className="page-btn" disabled={page === pagination.totalPages} onClick={() => handlePageChange(page + 1)}>Next →</button>
+                                </div>
+                            )}
                         </div>
-                    ))
+                    </div>
                 )}
             </div>
 
@@ -158,7 +303,7 @@ export default function AdminDashboard() {
                 </div>
             )}
 
-            {/* Pending Requests Section */}
+            {/* Pending Requests */}
             <div className="card">
                 <div className="card-header">
                     <h3>Pending Access Requests</h3>

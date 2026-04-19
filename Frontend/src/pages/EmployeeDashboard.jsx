@@ -10,6 +10,9 @@ export default function EmployeeDashboard() {
     const [msg, setMsg] = useState('')
     const [accessedFile, setAccessedFile] = useState(null)
     const [loading, setLoading] = useState(false)
+    const [page, setPage] = useState(1)
+    const [pagination, setPagination] = useState(null)
+    const [activeFolder, setActiveFolder] = useState(null)
     const { logout, role } = useAuth()
     const navigate = useNavigate()
 
@@ -18,13 +21,14 @@ export default function EmployeeDashboard() {
         setMyFiles(data.files || [])
     }
 
-    const fetchAllFiles = async () => {
-        const data = await getAllFiles()
+    const fetchAllFiles = async (p = 1) => {
+        const data = await getAllFiles(p, 20)
         setAllFiles(data.files || [])
+        setPagination(data.pagination || null)
     }
 
     const refreshAll = async () => {
-        await Promise.all([fetchMyFiles(), fetchAllFiles()])
+        await Promise.all([fetchMyFiles(), fetchAllFiles(page)])
     }
 
     useEffect(() => {
@@ -34,6 +38,11 @@ export default function EmployeeDashboard() {
         }
         refreshAll()
     }, [role])
+
+    const handlePageChange = (newPage) => {
+        setPage(newPage)
+        fetchAllFiles(newPage)
+    }
 
     const handleRequestAccess = async (e) => {
         e.preventDefault()
@@ -55,6 +64,20 @@ export default function EmployeeDashboard() {
 
     const isImage = (url) => /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url)
     const isVideo = (url) => /\.(mp4|webm|ogg)$/i.test(url)
+
+    const getFileIcon = (name) => {
+        const ext = name.split('.').pop().toLowerCase()
+        if (['jpg','jpeg','png','gif','webp','svg'].includes(ext)) return '🖼️'
+        if (['mp4','webm','ogg'].includes(ext)) return '🎬'
+        if (['mp3','wav'].includes(ext)) return '🎵'
+        if (['pdf'].includes(ext)) return '📕'
+        if (['doc','docx'].includes(ext)) return '📝'
+        if (['xls','xlsx'].includes(ext)) return '📊'
+        if (['ppt','pptx'].includes(ext)) return '📋'
+        if (['zip'].includes(ext)) return '🗜️'
+        if (['csv','txt'].includes(ext)) return '📄'
+        return '📎'
+    }
 
     // Build a set of accessible file IDs for quick lookup
     const accessibleIds = new Set(myFiles.map(item => item.files?.id))
@@ -99,41 +122,71 @@ export default function EmployeeDashboard() {
             {/* All Files Browser */}
             <div className="card">
                 <div className="card-header">
-                    <h3>All Files</h3>
-                    <button className="refresh-btn" onClick={refreshAll}>Refresh</button>
+                    <h3>All Files {pagination && <span className="pagination-info">({pagination.total} total)</span>}</h3>
+                    <button className="refresh-btn" onClick={refreshAll}>↻ Refresh</button>
                 </div>
                 {allFiles.length === 0 ? (
                     <p className="empty">No files available</p>
                 ) : (
-                    Object.entries(grouped).map(([folder, folderFiles]) => (
-                        <div key={folder} className="folder-group">
-                            <p className="folder-label">📁 {folder}</p>
-                            <div className="file-grid">
-                                {folderFiles.map(f => {
-                                    const hasAccess = accessibleIds.has(f.id)
-                                    return (
-                                        <div key={f.id} className={`file-card ${hasAccess ? '' : 'locked'}`}>
-                                            <p className="file-name">
-                                                {hasAccess ? '🔓' : '🔒'} {f.file_name}
-                                            </p>
+                    <div className="file-browser">
+                        {/* Folder Sidebar */}
+                        <div className="folder-sidebar">
+                            <p className="sidebar-title">Folders</p>
+                            <div
+                                className={`sidebar-folder ${!activeFolder ? 'active' : ''}`}
+                                onClick={() => setActiveFolder(null)}
+                            >🗂 All Files</div>
+                            {Object.keys(grouped).map(folder => (
+                                <div
+                                    key={folder}
+                                    className={`sidebar-folder ${activeFolder === folder ? 'active' : ''}`}
+                                    onClick={() => setActiveFolder(folder)}
+                                >📁 {folder}</div>
+                            ))}
+                        </div>
+
+                        {/* File List */}
+                        <div className="file-browser-main">
+                            <div className="file-list-header">
+                                <span>Name</span>
+                                <span>Actions</span>
+                            </div>
+                            {(activeFolder ? grouped[activeFolder] || [] : allFiles).map(f => {
+                                const hasAccess = accessibleIds.has(f.id)
+                                return (
+                                    <div key={f.id} className={`file-row ${hasAccess ? '' : 'locked'}`}>
+                                        <div className="file-row-name">
+                                            <span className="file-type-icon">{getFileIcon(f.file_name)}</span>
+                                            <div>
+                                                <p className="file-row-title">
+                                                    {hasAccess ? '🔓' : '🔒'} {f.file_name}
+                                                </p>
+                                                <p className="file-row-folder">📁 {f.folders?.folder_name || 'No Folder'}</p>
+                                            </div>
+                                        </div>
+                                        <div className="file-row-actions">
                                             {hasAccess ? (
-                                                <div className="file-actions">
-                                                    <button className="access-btn" onClick={() => handleAccessFile(f.id)}>View</button>
-                                                    <a href={f.file_url} target="_blank" rel="noreferrer" className="download-btn">Download</a>
-                                                </div>
+                                                <>
+                                                    <button className="icon-btn view" onClick={() => handleAccessFile(f.id)} title="Preview">👁</button>
+                                                    <a href={f.file_url} target="_blank" rel="noreferrer" className="icon-btn download" title="Download">⬇</a>
+                                                </>
                                             ) : (
-                                                <div className="file-actions">
-                                                    <button className="request-btn" onClick={() => handleLockedClick(f.id)}>
-                                                        Request Access
-                                                    </button>
-                                                </div>
+                                                <button className="icon-btn request" onClick={() => handleLockedClick(f.id)} title="Request Access">🔑 Request</button>
                                             )}
                                         </div>
-                                    )
-                                })}
-                            </div>
+                                    </div>
+                                )
+                            })}
+
+                            {pagination && pagination.totalPages > 1 && (
+                                <div className="pagination">
+                                    <button className="page-btn" disabled={page === 1} onClick={() => handlePageChange(page - 1)}>← Prev</button>
+                                    <span className="page-info">Page {page} of {pagination.totalPages}</span>
+                                    <button className="page-btn" disabled={page === pagination.totalPages} onClick={() => handlePageChange(page + 1)}>Next →</button>
+                                </div>
+                            )}
                         </div>
-                    ))
+                    </div>
                 )}
             </div>
 

@@ -1,6 +1,7 @@
 import express from 'express'
 import dotenv from 'dotenv'
 import cors from 'cors'
+import rateLimit from 'express-rate-limit'
 import fileRoutes from './src/Routes/File_upload.js'
 import supabase from './src/config/supabase.js'
 
@@ -12,6 +13,45 @@ app.use(cors({
     credentials: true
 }))
 app.use(express.json())
+
+/*
+  Rate Limiting — Why?
+  Without this, anyone can spam your API:
+  - Brute force login attempts (try 1000 passwords)
+  - Flood upload endpoint and fill your storage
+  - Spam access requests to overload email/DB
+
+  How it works:
+  - Each IP is tracked separately
+  - If they exceed the limit in the window, they get 429 Too Many Requests
+  - Window resets after the time period
+*/
+
+// Auth routes — strict: 10 attempts per 15 min per IP
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: { error: 'Too many attempts. Please try again after 15 minutes.' }
+})
+
+// Upload — 20 uploads per 10 min per IP
+const uploadLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 20,
+    message: { error: 'Upload limit reached. Please wait before uploading more files.' }
+})
+
+// General API — 100 requests per minute per IP
+const generalLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 100,
+    message: { error: 'Too many requests. Please slow down.' }
+})
+
+app.use('/api/login', authLimiter)
+app.use('/api/register', authLimiter)
+app.use('/api/upload', uploadLimiter)
+app.use('/api', generalLimiter)
 
 app.use('/api', fileRoutes)
 

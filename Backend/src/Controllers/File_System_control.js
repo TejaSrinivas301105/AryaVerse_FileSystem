@@ -1,26 +1,79 @@
-import supabase from '../config/supabase.js'
-import { sendAccessRequestEmail, sendAccessGrantedEmail, sendAccessRejectedEmail } from '../util/Email_notify.js'
 import multer from 'multer'
+import path from 'path'
+import supabase from '../config/supabase.js'
+import { sendAccessGrantedEmail, sendAccessRejectedEmail, sendAccessRequestEmail } from '../util/Email_notify.js'
 
-// multer — memory storage, up to 10 files, 100MB each
+
+const sanitizeFilename = (name) => {
+    const ext = path.extname(name)
+    const base = path.basename(name, ext).replace(/[^a-zA-Z0-9_\-]/g, '_')
+    return `${base}${ext.toLowerCase()}`
+}
+
+// multer — memory storage, up to 100 files, 100MB each
 export const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 100 * 1024 * 1024 },
 })
 
-// Admin: Upload multiple files to Supabase Storage + save metadata
 export const File_upload = async (req, res) => {
     const { folder_id } = req.body
     const admin_id = req.user.id
+    let relativePaths = []
+
+    try {
+        relativePaths = req.body.relative_paths ? JSON.parse(req.body.relative_paths) : []
+    } catch { relativePaths = [] }
 
     if (!req.files || req.files.length === 0)
         return res.status(400).json({ error: 'No files provided' })
 
+    const folderCache = {}
+
+    const getOrCreateFolder = async (folderName) => {
+        if (!folderName) return folder_id || null
+        if (folderCache[folderName]) return folderCache[folderName]
+        // Check if folder already exists
+        const { data: existing } = await supabase
+            .from('folders')
+            .select('id')
+            .eq('folder_name', folderName)
+            .single()
+        if (existing) {
+            folderCache[folderName] = existing.id
+            return existing.id
+        }
+        // Create new folder
+        const { data: created } = await supabase
+            .from('folders')
+            .insert([{ folder_name: folderName, created_by: admin_id }])
+            .select('id')
+            .single()
+        folderCache[folderName] = created.id
+        return created.id
+    }
+
     const results = []
 
-    for (const file of req.files) {
-        const { originalname, buffer, mimetype } = file
-        const storagePath = `uploads/${Date.now()}_${originalname}`
+    for (let i = 0; i < req.files.length; i++) {
+        const { originalname, buffer, mimetype } = req.files[i]
+        const relativePath = relativePaths[i] || ''
+
+
+        const safeName = sanitizeFilename(originalname)
+
+
+        let resolvedFolderId = folder_id || null
+        if (relativePath) {
+            const parts = relativePath.split('/')
+            if (parts.length > 1) {
+                // Use top-level folder name only (e.g. "ProjectDocs")
+                const topFolder = parts[0]
+                resolvedFolderId = await getOrCreateFolder(topFolder)
+            }
+        }
+
+        const storagePath = `uploads/${Date.now()}_${safeName}`
 
         const { error: storageErr } = await supabase.storage
             .from('files')
@@ -35,7 +88,7 @@ export const File_upload = async (req, res) => {
 
         const { data, error } = await supabase
             .from('files')
-            .insert([{ file_name: originalname, file_url: urlData.publicUrl, uploaded_by: admin_id, folder_id: folder_id || null }])
+            .insert([{ file_name: safeName, file_url: urlData.publicUrl, uploaded_by: admin_id, folder_id: resolvedFolderId }])
             .select()
             .single()
 
@@ -206,15 +259,80 @@ export const check_access = async (req, res) => {
     res.json({ access: true, file, expires_at: data.expires_at })
 }
 
-// Both: Get ALL files (with folder info) — employee sees all but access is checked per file
 export const get_all_files = async (req, res) => {
-    const { data, error } = await supabase
+    const page = Math.max(1, parseInt(req.query.page) || 1)
+    const limit = Math.min(50, parseInt(req.query.limit) || 20) // max 50 per page
+    const offset = (page - 1) * limit
+
+    const { data, error, count } = await supabase
         .from('files')
-        .select('id, file_name, file_url, folder_id, folders(folder_name)')
+        .select('id, file_name, file_url, folder_id, folders(folder_name)', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1)
+
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({
+        files: data,
+        pagination: {
+            page,
+            limit,
+            total: count,
+            totalPages: Math.ceil(count / limit)
+        }
+    })
+}
+
+export const delete_file = async (req, res) => {
+    const { file_id } = req.body
+
+    if (!file_id) return res.status(400).json({ error: 'file_id is required' })
+
+    const { data: file, error: fileErr } = await supabase
+        .from('files')
+        .select('file_url')
+        .eq('id', file_id)
+        .single()
+
+    if (fileErr || !file) return res.status(404).json({ error: 'File not found' })
+
+    const urlParts = file.file_url.split('/storage/v1/object/public/files/')
+    const storagePath = urlParts[1]
+
+    if (storagePath) {
+        await supabase.storage.from('files').remove([storagePath])
+    }
+
+    const { error } = await supabase.from('files').delete().eq('id', file_id)
+    if (error) return res.status(500).json({ error: error.message })
+
+    res.json({ message: 'File deleted successfully' })
+}
+
+export const create_folder = async (req, res) => {
+    const { folder_name } = req.body
+    const admin_id = req.user.id
+
+    if (!folder_name?.trim()) return res.status(400).json({ error: 'folder_name is required' })
+
+    const { data, error } = await supabase
+        .from('folders')
+        .insert([{ folder_name: folder_name.trim(), created_by: admin_id }])
+        .select()
+        .single()
+
+    if (error) return res.status(500).json({ error: error.message })
+    res.status(201).json({ message: 'Folder created', folder: data })
+}
+
+// Admin: Get all folders
+export const get_folders = async (req, res) => {
+    const { data, error } = await supabase
+        .from('folders')
+        .select('id, folder_name, created_at')
         .order('created_at', { ascending: false })
 
     if (error) return res.status(500).json({ error: error.message })
-    res.json({ files: data })
+    res.json({ folders: data })
 }
 
 // Employee: List all files with active access

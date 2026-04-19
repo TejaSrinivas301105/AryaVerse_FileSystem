@@ -1,16 +1,101 @@
-# React + Vite
+# Cloud Core Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React single-page application for login/register and role-based dashboards (admin and employee) in the file management system.
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Runtime: Node.js
+- Build Tool: Vite 8
+- UI Library: React 19
+- Routing: `react-router-dom` 7 with `BrowserRouter`
+- State Management: React Context (`AuthContext`) + local component state (`useState`/`useEffect`)
+- HTTP/API Integration: Browser `fetch` with centralized API helpers in `src/api.js`
+- Linting: ESLint 9
 
-## React Compiler
+## Getting Started
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 1. Prerequisites
 
-## Expanding the ESLint configuration
+- Node.js 20+ recommended
+- npm 10+ recommended
+- Backend API running locally at `http://localhost:3000` (default expectation)
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### 2. Install dependencies
+
+```bash
+cd Frontend
+npm install
+```
+
+### 3. Environment variables
+
+No frontend `.env` variables are required in the current implementation.
+
+Why: API calls use a fixed base path (`/api`) in `src/api.js`, and Vite dev server proxies `/api` to `http://localhost:3000` via `vite.config.js`.
+
+### 4. Run locally
+
+```bash
+npm run dev
+```
+
+App will run on `http://localhost:5173`.
+
+### 5. Production build
+
+```bash
+npm run build
+npm run preview
+```
+
+Build output directory: `dist/`.
+
+## Architecture
+
+### Folder Structure
+
+```text
+Frontend/
+├── index.html
+├── vite.config.js
+└── src/
+	├── main.jsx                # React bootstrap
+	├── App.jsx                 # Top-level router + protected routes
+	├── AuthContext.jsx         # Auth context/provider (token/role/userId)
+	├── api.js                  # API functions for backend endpoints
+	├── pages/
+	│   ├── Login.jsx
+	│   ├── Register.jsx
+	│   ├── AdminDashboard.jsx
+	│   └── EmployeeDashboard.jsx
+	├── App.css
+	└── index.css
+```
+
+### Routing Strategy
+
+- `App.jsx` defines route map:
+- `/` -> Login
+- `/register` -> Register
+- `/admin` -> Admin dashboard (requires role `admin`)
+- `/employee` -> Employee dashboard (requires role `employee`)
+
+Route protection is handled by `ProtectedRoute`, which checks `token` and `role` from `AuthContext` and redirects unauthorized users to `/`.
+
+### State Management Choices
+
+- Global auth state is stored in `AuthContext`:
+- `token`, `role`, `userId`
+- `saveAuth()` persists credentials to `localStorage`
+- `logout()` clears storage and in-memory state
+
+- Page-level UI state (tables, pagination, loading, messages, previews) is handled with component-local hooks.
+
+This keeps authentication shared across all routes while keeping feature-specific state isolated to each dashboard.
+
+### API Integration Pattern
+
+- All HTTP calls are centralized in `src/api.js`.
+- Authenticated requests attach `Authorization: Bearer <token>`.
+- A shared response handler clears session and redirects to login on `401`.
+- Frontend talks to backend through `/api/*` paths for both local dev and reverse-proxy deployments.

@@ -1,54 +1,37 @@
-# AryVerse File Management System — Backend
+# Cloud Core Backend
 
-A production-ready REST API for a company data center built with **Node.js + Express + Supabase**. Supports role-based access control, time-bound file permissions, folder management, email notifications, rate limiting, and audit logging.
-
----
+Node.js/Express REST API for authentication, file uploads, folder management, access requests, approval workflows, and audit logging using Supabase (PostgreSQL + Storage + Auth).
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Runtime | Node.js (ESM) |
-| Framework | Express v5 |
-| Database | Supabase (PostgreSQL) |
-| Storage | Supabase Storage |
-| Auth | Supabase JWT |
-| Email | Nodemailer (Gmail) |
-| Process Manager | PM2 |
-| Rate Limiting | express-rate-limit |
-| File Handling | Multer (memory storage) |
+- Language: JavaScript (ESM) on Node.js
+- Framework: Express 5
+- Database: Supabase Postgres
+- Object Storage: Supabase Storage (`files` bucket)
+- Authentication: Supabase Auth JWT validation
+- Email: Nodemailer (Gmail SMTP)
+- File Upload Handling: Multer (memory storage)
+- Rate Limiting: `express-rate-limit`
 
----
+## Getting Started
 
-## Project Structure
+### 1. Prerequisites
 
-```
-Backend/
-├── index.js                        # Entry point, CORS, rate limiting
-├── src/
-│   ├── config/
-│   │   └── supabase.js             # Supabase client (service role)
-│   ├── Controllers/
-│   │   ├── Auth_control.js         # Register, Login
-│   │   └── File_System_control.js  # All file/folder operations
-│   ├── MiddleWares/
-│   │   └── File_Auth_middle.js     # JWT auth + admin role guard
-│   ├── Routes/
-│   │   └── File_upload.js          # All route definitions
-│   ├── util/
-│   │   └── Email_notify.js         # Email notification helpers
-│   └── Schema.sql                  # Full DB schema + RLS policies
-├── .env                            # Environment variables (never commit)
-├── .env.example                    # Template for environment variables
-├── ecosystem.config.cjs            # PM2 config
-└── deploy.sh                       # Automated Ubuntu deploy script
+- Node.js 20+ recommended
+- npm 10+ recommended
+- A Supabase project
+- Gmail app password if email notifications are needed
+
+### 2. Install dependencies
+
+```bash
+cd Backend
+npm install
 ```
 
----
+### 3. Configure environment
 
-## Environment Variables
-
-Create a `.env` file in the `Backend/` folder:
+Create `Backend/.env` from `Backend/.env.example`:
 
 ```env
 SUPABASE_URL=https://your-project-id.supabase.co
@@ -57,220 +40,93 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 EMAIL=your-email@gmail.com
 PASSWORD=your-gmail-app-password
 
-FRONTEND_URL=http://your-server-ip-or-domain
+FRONTEND_URL=http://localhost:5173
 ```
 
-| Variable | Where to get it |
-|---|---|
-| `SUPABASE_URL` | Supabase Dashboard → Settings → API → Project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Dashboard → Settings → API → service_role key |
-| `EMAIL` | Your Gmail address |
-| `PASSWORD` | Gmail → Manage Account → Security → App Passwords |
-| `FRONTEND_URL` | Your frontend URL e.g. `http://103.x.x.x` or `https://yourdomain.com` |
+Variable usage in code:
 
----
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`: Supabase client initialization in `src/config/supabase.js`
+- `EMAIL`, `PASSWORD`: Gmail transporter in `src/util/Email_notify.js`
+- `FRONTEND_URL`: CORS allowlist in `index.js`
 
-## Database Setup
+### 4. Initialize database
 
-Run once in Supabase SQL Editor:
+Run `src/Schema.sql` in Supabase SQL Editor.
 
-1. Go to [https://supabase.com/dashboard](https://supabase.com/dashboard)
-2. Select your project → SQL Editor → New Query
-3. Paste the full contents of `src/Schema.sql`
-4. Click Run
+This creates:
 
-This creates all tables, RLS policies, helper functions, and the auth trigger.
+- Core tables (`users`, `folders`, `files`, `access_requests`, `file_access`, `audit_logs`)
+- RLS policies
+- SQL helper functions (`is_admin`, `has_file_access`)
+- Trigger `on_auth_user_created` to sync `auth.users` into `public.users`
 
-### Tables
-
-| Table | Purpose |
-|---|---|
-| `users` | Synced from Supabase Auth, stores role (admin/employee) |
-| `folders` | Folder metadata created by admins |
-| `files` | File metadata — name, URL, folder, uploader |
-| `access_requests` | Employee requests for file access (pending/approved/rejected) |
-| `file_access` | Active time-bound access grants per user per file |
-| `audit_logs` | Every file access event logged with timestamp |
-
----
-
-## API Reference
-
-### Auth Routes — No token required
-
-| Method | Route | Body | Description |
-|---|---|---|---|
-| POST | `/api/register` | `{ email, password, role }` | Register new user. Role must be `employee` |
-| POST | `/api/login` | `{ email, password }` | Login. Returns `access_token`, `role`, `user_id` |
-
----
-
-### Admin Routes — Requires Bearer token + admin role
-
-| Method | Route | Body / Params | Description |
-|---|---|---|---|
-| POST | `/api/upload` | `multipart/form-data` — `files[]`, `folder_id?`, `relative_paths?` | Upload up to 100 files. Supports folder upload with subfolder structure |
-| POST | `/api/folder` | `{ folder_name }` | Create a new folder |
-| GET | `/api/folders` | — | List all folders |
-| GET | `/api/requests` | — | Get all pending access requests |
-| POST | `/api/approve` | `{ request_id, duration_ms }` | Approve access request with time limit |
-| POST | `/api/reject` | `{ request_id }` | Reject access request |
-| DELETE | `/api/file` | `{ file_id }` | Delete file from storage + database |
-
----
-
-### Employee + Admin Routes — Requires Bearer token
-
-| Method | Route | Body / Params | Description |
-|---|---|---|---|
-| GET | `/api/all-files` | `?page=1&limit=20` | List all files with pagination (max 50 per page) |
-| GET | `/api/my-files` | — | List files the employee currently has active access to |
-| POST | `/api/request-access` | `{ file_id }` | Request access to a file |
-| POST | `/api/access-file` | `{ file_id }` | View a file (checks access, logs to audit) |
-
----
-
-## Rate Limiting
-
-| Route | Limit | Window |
-|---|---|---|
-| `/api/login`, `/api/register` | 10 requests | 15 minutes |
-| `/api/upload` | 20 requests | 10 minutes |
-| All other `/api/*` routes | 100 requests | 1 minute |
-
-Exceeding the limit returns `429 Too Many Requests`.
-
----
-
-## File Upload Rules
-
-- Max file size: **100MB per file**
-- Max files per request: **100 files**
-- Allowed types: PDF, Word, Excel, PowerPoint, CSV, TXT, JPEG, PNG, GIF, WebP, SVG, MP4, WebM, OGG, MP3, WAV, ZIP
-- File names are sanitized — special characters replaced with `_`
-- Folder uploads preserve top-level folder name and auto-create it in DB
-
----
-
-## Security Features
-
-- All routes (except login/register) require a valid Supabase JWT
-- Admin-only routes additionally verify role from the `users` table
-- Service role key used server-side only — never exposed to frontend
-- Row Level Security (RLS) enabled on all Supabase tables
-- CORS restricted to `FRONTEND_URL` only
-- File type validated by MIME type (not just extension)
-- Path traversal prevented by filename sanitization
-
----
-
-## Local Development
+### 5. Run locally
 
 ```bash
-# Install dependencies
-npm install
-
-# Start with hot reload
 npm run dev
 ```
 
-Server runs on `http://localhost:3000`
+API base URL: `http://localhost:3000`.
 
----
+## Architecture
 
-## Ubuntu Production Deployment
+### Project Structure
 
-### Option 1 — Automated
-
-```bash
-# From your Windows machine, copy project to server
-scp -r ./File_Management user@your-server-ip:/home/user/
-
-# SSH into server
-ssh user@your-server-ip
-
-cd /home/user/File_Management/Backend
-
-# Setup environment
-cp .env.example .env
-nano .env        # fill in real values
-
-# Run deploy script
-chmod +x deploy.sh
-./deploy.sh
+```text
+Backend/
+├── index.js                          # App bootstrap, CORS, JSON parser, rate limits
+└── src/
+	├── config/supabase.js            # Supabase service-role client
+	├── Routes/File_upload.js         # Route map
+	├── MiddleWares/File_Auth_middle.js
+	│                                 # JWT auth + admin role middleware
+	├── Controllers/Auth_control.js   # Register/login handlers
+	├── Controllers/File_System_control.js
+	│                                 # Upload, access flow, folders, listing, deletion
+	├── util/Email_notify.js          # Notification email helpers
+	└── Schema.sql                    # Database schema + RLS + trigger
 ```
 
-### Option 2 — Manual
+### API Design Pattern
 
-```bash
-# Install Node.js 20
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
+- Pattern: REST over HTTP JSON
+- Base path: `/api`
+- Transport:
+- JSON for most endpoints
+- `multipart/form-data` for `/api/upload`
 
-# Install PM2 globally
-sudo npm install -g pm2
+Route categories:
 
-# Install dependencies
-npm install --omit=dev
+- Public auth: `POST /api/register`, `POST /api/login`
+- Admin-only: upload, folder management, request moderation, file delete
+- Authenticated (admin + employee): list files, request access, access file
 
-# Start with PM2
-pm2 start ecosystem.config.cjs
-pm2 save
-pm2 startup
-```
+### Authentication and Authorization Flow
 
----
+1. Client logs in with `/api/login` and receives `access_token`, `role`, `user_id`.
+2. Client sends `Authorization: Bearer <token>` on protected routes.
+3. `authenticate` middleware validates token via `supabase.auth.getUser(token)`.
+4. `adminOnly` middleware loads role from `users` table and enforces admin-only access.
+5. For file access:
+- Admins can access any file.
+- Employees must have an unexpired record in `file_access`.
 
-## PM2 Commands
+### Data Models
 
-```bash
-pm2 status                      # check running processes
-pm2 logs file-management        # live logs
-pm2 restart file-management     # restart app
-pm2 stop file-management        # stop app
-pm2 reload file-management      # zero-downtime reload
-```
+- `users`: application users with `role` (`admin` or `employee`)
+- `folders`: logical grouping for uploaded files
+- `files`: metadata and public storage URL for uploaded files
+- `access_requests`: employee requests with `pending/approved/rejected` status
+- `file_access`: time-bound grants per `user_id` + `file_id` with `expires_at`
+- `audit_logs`: immutable access activity records
 
----
+### Operational Behaviors
 
-## Testing with Postman
-
-### 1. Login and get token
-```
-POST /api/login
-Body: { "email": "admin@company.com", "password": "yourpassword" }
-```
-Copy `access_token` from response.
-
-### 2. Set Authorization header on all subsequent requests
-```
-Authorization: Bearer <access_token>
-```
-
-### 3. Example — Approve an access request
-```
-POST /api/approve
-Body: { "request_id": "uuid-here", "duration_ms": 86400000 }
-```
-
-### duration_ms values
-| Value | Duration |
-|---|---|
-| `3600000` | 1 Hour |
-| `86400000` | 1 Day |
-| `604800000` | 1 Week |
-
----
-
-## Email Notifications
-
-Emails are sent automatically on these events:
-
-| Event | Recipient | Trigger |
-|---|---|---|
-| New access request | All admins | Employee requests file access |
-| Access approved | Employee | Admin approves request |
-| Access rejected | Employee | Admin rejects request |
-
-Uses Gmail SMTP. Requires a Gmail App Password (not your regular Gmail password).
-To generate: Gmail → Manage Account → Security → 2-Step Verification → App Passwords.
+- Upload limits: up to 100 files/request, 100MB/file (Multer limits)
+- Rate limiting:
+- `/api/login`, `/api/register`: 10 requests / 15 minutes / IP
+- `/api/upload`: 20 requests / 10 minutes / IP
+- other `/api/*`: 100 requests / minute / IP
+- Notifications:
+- admin notified on new request
+- employee notified on approval/rejection

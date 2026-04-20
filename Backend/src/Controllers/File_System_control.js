@@ -259,10 +259,36 @@ export const check_access = async (req, res) => {
     res.json({ access: true, file, expires_at: data.expires_at })
 }
 
+// export const get_all_files = async (req, res) => {
+//     const page = Math.max(1, parseInt(req.query.page) || 1)
+//     const limit = Math.min(50, parseInt(req.query.limit) || 20) // max 50 per page
+//     const offset = (page - 1) * limit
+
+//     const { data, error, count } = await supabase
+//         .from('files')
+//         .select('id, file_name, file_url, folder_id, folders(folder_name)', { count: 'exact' })
+//         .order('created_at', { ascending: false })
+//         .range(offset, offset + limit - 1)
+
+//     if (error) return res.status(500).json({ error: error.message })
+//     res.json({
+//         files: data,
+//         pagination: {
+//             page,
+//             limit,
+//             total: count,
+//             totalPages: Math.ceil(count / limit)
+//         }
+//     })
+// }
 export const get_all_files = async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1)
-    const limit = Math.min(50, parseInt(req.query.limit) || 20) // max 50 per page
+    const limit = Math.min(50, parseInt(req.query.limit) || 20)
     const offset = (page - 1) * limit
+    const user_id = req.user.id
+
+    const { data: userRecord } = await supabase.from('users').select('role').eq('id', user_id).single()
+    const isAdmin = userRecord?.role === 'admin'
 
     const { data, error, count } = await supabase
         .from('files')
@@ -271,14 +297,47 @@ export const get_all_files = async (req, res) => {
         .range(offset, offset + limit - 1)
 
     if (error) return res.status(500).json({ error: error.message })
+
+    if (isAdmin) {
+        return res.json({
+            files: data,
+            pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) }
+        })
+    }
+
+    // For employees: hide file_url, attach access_status per file
+    const fileIds = data.map(f => f.id)
+
+    const { data: accessRows } = await supabase
+        .from('file_access')
+        .select('file_id, expires_at')
+        .eq('user_id', user_id)
+        .in('file_id', fileIds)
+
+    const { data: requestRows } = await supabase
+        .from('access_requests')
+        .select('file_id, status')
+        .eq('user_id', user_id)
+        .in('file_id', fileIds)
+
+    const accessMap = {}
+    for (const a of accessRows || []) {
+        accessMap[a.file_id] = new Date(a.expires_at) > new Date() ? 'granted' : 'expired'
+    }
+
+    const requestMap = {}
+    for (const r of requestRows || []) {
+        requestMap[r.file_id] = r.status  // 'pending', 'approved', 'rejected'
+    }
+
+    const files = data.map(({ file_url, ...rest }) => ({
+        ...rest,
+        access_status: accessMap[rest.id] || requestMap[rest.id] || 'none'
+    }))
+
     res.json({
-        files: data,
-        pagination: {
-            page,
-            limit,
-            total: count,
-            totalPages: Math.ceil(count / limit)
-        }
+        files,
+        pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) }
     })
 }
 

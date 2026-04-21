@@ -1,8 +1,8 @@
 import multer from 'multer'
 import path from 'path'
+import fs from 'fs'
 import supabase from '../config/supabase.js'
 import { sendAccessGrantedEmail, sendAccessRejectedEmail, sendAccessRequestEmail } from '../util/Email_notify.js'
-
 
 const sanitizeFilename = (name) => {
     const ext = path.extname(name)
@@ -10,9 +10,16 @@ const sanitizeFilename = (name) => {
     return `${base}${ext.toLowerCase()}`
 }
 
-// multer — memory storage, up to 100 files, 100MB each
+const getStoragePath = () => path.resolve(process.env.LOCAL_STORAGE_PATH || './uploads')
+const STORAGE_PATH = getStoragePath()
+if (!fs.existsSync(STORAGE_PATH)) fs.mkdirSync(STORAGE_PATH, { recursive: true })
+
+// multer — disk storage, up to 100 files, 100MB each
 export const upload = multer({
-    storage: multer.memoryStorage(),
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => cb(null, STORAGE_PATH),
+        filename: (req, file, cb) => cb(null, `${Date.now()}_${sanitizeFilename(file.originalname)}`)
+    }),
     limits: { fileSize: 100 * 1024 * 1024 },
 })
 
@@ -56,7 +63,7 @@ export const File_upload = async (req, res) => {
     const results = []
 
     for (let i = 0; i < req.files.length; i++) {
-        const { originalname, buffer, mimetype } = req.files[i]
+        const { originalname } = req.files[i]
         const relativePath = relativePaths[i] || ''
 
 
@@ -73,22 +80,12 @@ export const File_upload = async (req, res) => {
             }
         }
 
-        const storagePath = `uploads/${Date.now()}_${safeName}`
-
-        const { error: storageErr } = await supabase.storage
-            .from('files')
-            .upload(storagePath, buffer, { contentType: mimetype, upsert: false })
-
-        if (storageErr) {
-            results.push({ file_name: originalname, error: storageErr.message })
-            continue
-        }
-
-        const { data: urlData } = supabase.storage.from('files').getPublicUrl(storagePath)
+        const diskFilename = req.files[i].filename
+        const fileUrl = `${process.env.SERVER_BASE_URL || 'http://localhost:3000'}/files/${diskFilename}`
 
         const { data, error } = await supabase
             .from('files')
-            .insert([{ file_name: safeName, file_url: urlData.publicUrl, uploaded_by: admin_id, folder_id: resolvedFolderId }])
+            .insert([{ file_name: safeName, file_url: fileUrl, uploaded_by: admin_id, folder_id: resolvedFolderId }])
             .select()
             .single()
 
@@ -261,8 +258,12 @@ export const check_access = async (req, res) => {
 
 export const get_all_files = async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1)
-    const limit = Math.min(50, parseInt(req.query.limit) || 20) // max 50 per page
+    const limit = Math.min(50, parseInt(req.query.limit) || 20)
     const offset = (page - 1) * limit
+    const user_id = req.user.id
+
+    const { data: userRecord } = await supabase.from('users').select('role').eq('id', user_id).single()
+    const isAdmin = userRecord?.role === 'admin'
 
     const { data, error, count } = await supabase
         .from('files')
@@ -271,14 +272,47 @@ export const get_all_files = async (req, res) => {
         .range(offset, offset + limit - 1)
 
     if (error) return res.status(500).json({ error: error.message })
+
+    if (isAdmin) {
+        return res.json({
+            files: data,
+            pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) }
+        })
+    }
+
+    // For employees: hide file_url, attach access_status per file
+    const fileIds = data.map(f => f.id)
+
+    const { data: accessRows } = await supabase
+        .from('file_access')
+        .select('file_id, expires_at')
+        .eq('user_id', user_id)
+        .in('file_id', fileIds)
+
+    const { data: requestRows } = await supabase
+        .from('access_requests')
+        .select('file_id, status')
+        .eq('user_id', user_id)
+        .in('file_id', fileIds)
+
+    const accessMap = {}
+    for (const a of accessRows || []) {
+        accessMap[a.file_id] = new Date(a.expires_at) > new Date() ? 'granted' : 'expired'
+    }
+
+    const requestMap = {}
+    for (const r of requestRows || []) {
+        requestMap[r.file_id] = r.status  // 'pending', 'approved', 'rejected'
+    }
+
+    const files = data.map(({ file_url, ...rest }) => ({
+        ...rest,
+        access_status: accessMap[rest.id] || requestMap[rest.id] || 'none'
+    }))
+
     res.json({
-        files: data,
-        pagination: {
-            page,
-            limit,
-            total: count,
-            totalPages: Math.ceil(count / limit)
-        }
+        files,
+        pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) }
     })
 }
 
@@ -295,12 +329,9 @@ export const delete_file = async (req, res) => {
 
     if (fileErr || !file) return res.status(404).json({ error: 'File not found' })
 
-    const urlParts = file.file_url.split('/storage/v1/object/public/files/')
-    const storagePath = urlParts[1]
-
-    if (storagePath) {
-        await supabase.storage.from('files').remove([storagePath])
-    }
+    const filename = file.file_url.split('/files/').pop()
+    const filePath = path.join(STORAGE_PATH, filename)
+    if (filename && fs.existsSync(filePath)) fs.unlinkSync(filePath)
 
     const { error } = await supabase.from('files').delete().eq('id', file_id)
     if (error) return res.status(500).json({ error: error.message })

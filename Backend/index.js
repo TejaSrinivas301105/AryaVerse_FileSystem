@@ -1,11 +1,13 @@
+import './src/config/env.js'  // MUST be first — loads .env before all other imports
 import express from 'express'
-import dotenv from 'dotenv'
 import cors from 'cors'
 import rateLimit from 'express-rate-limit'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import fileRoutes from './src/Routes/File_upload.js'
 import supabase, { getMissingSupabaseEnvVars } from './src/config/supabase.js'
 
-dotenv.config()
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const app = express()
 
@@ -33,18 +35,12 @@ app.use(cors({
 }))
 app.use(express.json())
 
-/*
-  Rate Limiting — Why?
-  Without this, anyone can spam your API:
-  - Brute force login attempts (try 1000 passwords)
-  - Flood upload endpoint and fill your storage
-  - Spam access requests to overload email/DB
+// Serve uploaded files from local disk
+const uploadsDir = process.env.LOCAL_STORAGE_PATH
+    ? path.resolve(process.env.LOCAL_STORAGE_PATH)
+    : path.join(__dirname, 'uploads')
+app.use('/files', express.static(uploadsDir))
 
-  How it works:
-  - Each IP is tracked separately
-  - If they exceed the limit in the window, they get 429 Too Many Requests
-  - Window resets after the time period
-*/
 
 // Auth routes — strict: 10 attempts per 15 min per IP
 const authLimiter = rateLimit({

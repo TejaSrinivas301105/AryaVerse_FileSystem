@@ -23,7 +23,7 @@ router.post('/register', register)
 router.post('/login', login)
 
 // Admin routes
-router.post('/upload', authenticate, adminOnly, (req, res, next) => {
+router.post('/upload', authenticate, (req, res, next) => {
     upload.array('files', 100)(req, res, (err) => {
         if (err) return res.status(400).json({ error: err.message })
         next()
@@ -33,7 +33,7 @@ router.get('/requests', authenticate, adminOnly, get_pending_requests)
 router.post('/approve', authenticate, adminOnly, admin_approve)
 router.post('/reject', authenticate, adminOnly, admin_reject)
 router.delete('/file', authenticate, adminOnly, delete_file)
-router.post('/folder', authenticate, adminOnly, create_folder)
+router.post('/folder', authenticate, create_folder)
 router.get('/folders', authenticate, adminOnly, get_folders)
 
 // Employee + Admin routes

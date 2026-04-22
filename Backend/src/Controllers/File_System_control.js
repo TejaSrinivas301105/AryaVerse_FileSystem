@@ -89,6 +89,15 @@ export const File_upload = async (req, res) => {
             .select()
             .single()
 
+        if (!error && data) {
+            // Auto-grant permanent access to the uploader
+            await supabase.from('file_access').insert([{
+                user_id: admin_id,
+                file_id: data.id,
+                expires_at: new Date('2099-12-31').toISOString()
+            }])
+        }
+
         results.push(error ? { file_name: originalname, error: error.message } : data)
     }
 
@@ -232,11 +241,14 @@ export const check_access = async (req, res) => {
 
     if (!file_id) return res.status(400).json({ error: 'file_id is required' })
 
-    // Admins always have access
+    // Admins and file owner always have access
     const { data: userRecord } = await supabase.from('users').select('role').eq('id', user_id).single()
-    if (userRecord?.role === 'admin') {
-        const { data: file } = await supabase.from('files').select('*').eq('id', file_id).single()
-        return res.json({ access: true, file })
+    const { data: fileRecord } = await supabase.from('files').select('*').eq('id', file_id).single()
+
+    if (!fileRecord) return res.status(404).json({ error: 'File not found' })
+
+    if (userRecord?.role === 'admin' || fileRecord.uploaded_by === user_id) {
+        return res.json({ access: true, file: fileRecord })
     }
 
     const { data } = await supabase
@@ -265,22 +277,30 @@ export const get_all_files = async (req, res) => {
     const { data: userRecord } = await supabase.from('users').select('role').eq('id', user_id).single()
     const isAdmin = userRecord?.role === 'admin'
 
-    const { data, error, count } = await supabase
-        .from('files')
-        .select('id, file_name, file_url, folder_id, folders(folder_name)', { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range(offset, offset + limit - 1)
-
-    if (error) return res.status(500).json({ error: error.message })
-
     if (isAdmin) {
+        // Admin sees all files
+        const { data, error, count } = await supabase
+            .from('files')
+            .select('id, file_name, file_url, folder_id, uploaded_by, folders(folder_name)', { count: 'exact' })
+            .order('created_at', { ascending: false })
+            .range(offset, offset + limit - 1)
+
+        if (error) return res.status(500).json({ error: error.message })
         return res.json({
             files: data,
             pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) }
         })
     }
 
-    // For employees: hide file_url, attach access_status per file
+    // Employee sees all files but with access_status, file_url hidden unless they have access
+    const { data, error, count } = await supabase
+        .from('files')
+        .select('id, file_name, folder_id, uploaded_by, folders(folder_name)', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1)
+
+    if (error) return res.status(500).json({ error: error.message })
+
     const fileIds = data.map(f => f.id)
 
     const { data: accessRows } = await supabase
@@ -302,12 +322,12 @@ export const get_all_files = async (req, res) => {
 
     const requestMap = {}
     for (const r of requestRows || []) {
-        requestMap[r.file_id] = r.status  // 'pending', 'approved', 'rejected'
+        requestMap[r.file_id] = r.status
     }
 
-    const files = data.map(({ file_url, ...rest }) => ({
-        ...rest,
-        access_status: accessMap[rest.id] || requestMap[rest.id] || 'none'
+    const files = data.map(f => ({
+        ...f,
+        access_status: f.uploaded_by === user_id ? 'owner' : (accessMap[f.id] || requestMap[f.id] || 'none')
     }))
 
     res.json({

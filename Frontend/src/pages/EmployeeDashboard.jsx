@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { requestAccess, getMyFiles, accessFile, getAllFiles } from '../api'
+import { requestAccess, getMyFiles, accessFile, getAllFiles, uploadFiles, getFolders, createFolder } from '../api'
 import { useAuth } from '../AuthContext'
 
 export default function EmployeeDashboard() {
@@ -13,8 +13,19 @@ export default function EmployeeDashboard() {
     const [page, setPage] = useState(1)
     const [pagination, setPagination] = useState(null)
     const [activeFolder, setActiveFolder] = useState(null)
+    const [uploadFiles_, setUploadFiles_] = useState([])
+    const [uploadFolderId, setUploadFolderId] = useState('')
+    const [folders, setFolders] = useState([])
+    const [uploading, setUploading] = useState(false)
+    const [newFolderName, setNewFolderName] = useState('')
+    const [creatingFolder, setCreatingFolder] = useState(false)
     const { logout, role } = useAuth()
     const navigate = useNavigate()
+
+    const fetchFolders = async () => {
+        const data = await getFolders()
+        setFolders(data.folders || [])
+    }
 
     const fetchMyFiles = async () => {
         const data = await getMyFiles()
@@ -28,7 +39,7 @@ export default function EmployeeDashboard() {
     }
 
     const refreshAll = async () => {
-        await Promise.all([fetchMyFiles(), fetchAllFiles(page)])
+        await Promise.all([fetchMyFiles(), fetchAllFiles(page), fetchFolders()])
     }
 
     useEffect(() => {
@@ -90,6 +101,35 @@ export default function EmployeeDashboard() {
         return acc
     }, {})
 
+    const handleUpload = async (e) => {
+        e.preventDefault()
+        if (!uploadFiles_ || uploadFiles_.length === 0) return setMsg('Select at least one file')
+        setUploading(true)
+        setMsg('')
+        const formData = new FormData()
+        Array.from(uploadFiles_).forEach(f => formData.append('files', f))
+        if (uploadFolderId) formData.append('folder_id', uploadFolderId)
+        const data = await uploadFiles(formData)
+        setUploading(false)
+        setMsg(data.message || data.error)
+        setUploadFiles_([])
+        setUploadFolderId('')
+        e.target.reset()
+        await refreshAll()
+    }
+
+    const handleCreateFolder = async (e) => {
+        e.preventDefault()
+        if (!newFolderName.trim()) return setMsg('Enter a folder name')
+        setCreatingFolder(true)
+        setMsg('')
+        const data = await createFolder(newFolderName.trim())
+        setCreatingFolder(false)
+        setMsg(data.message || data.error)
+        setNewFolderName('')
+        await fetchFolders()
+    }
+
     const handleLockedClick = (file_id) => {
         setFileId(file_id)
         setMsg(`File ID copied to request form. Click "Request Access" to submit.`)
@@ -104,6 +144,39 @@ export default function EmployeeDashboard() {
             </div>
 
             {msg && <p className="msg">{msg}</p>}
+
+            {/* Create Folder Section */}
+            <div className="card">
+                <h3>Create Folder</h3>
+                <form onSubmit={handleCreateFolder}>
+                    <input
+                        type="text"
+                        placeholder="Folder name"
+                        value={newFolderName}
+                        onChange={e => setNewFolderName(e.target.value)}
+                    />
+                    <button type="submit" disabled={creatingFolder}>{creatingFolder ? 'Creating...' : 'Create Folder'}</button>
+                </form>
+            </div>
+
+            {/* Upload Section */}
+            <div className="card">
+                <h3>Upload Files</h3>
+                <form onSubmit={handleUpload}>
+                    <input
+                        type="file"
+                        multiple
+                        onChange={e => setUploadFiles_(e.target.files)}
+                    />
+                    <select value={uploadFolderId} onChange={e => setUploadFolderId(e.target.value)}>
+                        <option value="">No Folder</option>
+                        {folders.map(f => (
+                            <option key={f.id} value={f.id}>{f.folder_name}</option>
+                        ))}
+                    </select>
+                    <button type="submit" disabled={uploading}>{uploading ? 'Uploading...' : 'Upload'}</button>
+                </form>
+            </div>
 
             {/* Request Access Section */}
             <div className="card">
@@ -152,7 +225,8 @@ export default function EmployeeDashboard() {
                                 <span>Actions</span>
                             </div>
                             {(activeFolder ? grouped[activeFolder] || [] : allFiles).map(f => {
-                                const hasAccess = accessibleIds.has(f.id)
+                                const status = f.access_status // 'owner','granted','pending','rejected','none'
+                                const hasAccess = status === 'owner' || status === 'granted'
                                 return (
                                     <div key={f.id} className={`file-row ${hasAccess ? '' : 'locked'}`}>
                                         <div className="file-row-name">
@@ -160,6 +234,7 @@ export default function EmployeeDashboard() {
                                             <div>
                                                 <p className="file-row-title">
                                                     {hasAccess ? '🔓' : '🔒'} {f.file_name}
+                                                    {status === 'owner' && <span style={{fontSize:'11px',marginLeft:'6px',color:'#888'}}>(you uploaded)</span>}
                                                 </p>
                                                 <p className="file-row-folder">📁 {f.folders?.folder_name || 'No Folder'}</p>
                                             </div>
@@ -168,8 +243,9 @@ export default function EmployeeDashboard() {
                                             {hasAccess ? (
                                                 <>
                                                     <button className="icon-btn view" onClick={() => handleAccessFile(f.id)} title="Preview">👁</button>
-                                                    <a href={f.file_url} target="_blank" rel="noreferrer" className="icon-btn download" title="Download">⬇</a>
                                                 </>
+                                            ) : status === 'pending' ? (
+                                                <span className="icon-btn" style={{opacity:0.6}}>⏳ Pending</span>
                                             ) : (
                                                 <button className="icon-btn request" onClick={() => handleLockedClick(f.id)} title="Request Access">🔑 Request</button>
                                             )}

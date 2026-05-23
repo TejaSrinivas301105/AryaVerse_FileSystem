@@ -24,7 +24,7 @@ export const upload = multer({
 })
 
 export const File_upload = async (req, res) => {
-    const { folder_id } = req.body
+    const folder_id = req.body.folder_id || null
     const admin_id = req.user.id
     let relativePaths = []
 
@@ -104,6 +104,7 @@ export const File_upload = async (req, res) => {
     res.status(201).json({ message: 'Upload complete', files: results })
 }
 
+
 // Employee: Request access to a file
 export const request_access = async (req, res) => {
     const { file_id } = req.body
@@ -147,6 +148,7 @@ export const request_access = async (req, res) => {
     res.status(201).json({ message: 'Access request submitted. Admin will be notified.' })
 }
 
+
 // Admin: Get all pending access requests
 export const get_pending_requests = async (req, res) => {
     const { data, error } = await supabase
@@ -158,6 +160,7 @@ export const get_pending_requests = async (req, res) => {
     if (error) return res.status(500).json({ error: error.message })
     res.json({ requests: data })
 }
+
 
 // Admin: Approve access request
 export const admin_approve = async (req, res) => {

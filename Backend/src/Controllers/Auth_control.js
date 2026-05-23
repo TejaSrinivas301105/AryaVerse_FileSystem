@@ -44,7 +44,8 @@ export const register = async (req, res) => {
 
 // Login — returns access_token to use as Bearer token
 export const login = async (req, res) => {
-    const { email, password } = req.body
+    const email = req.body?.email?.trim()?.toLowerCase()
+    const { password } = req.body
 
     if (!email || !password)
         return res.status(400).json({ error: 'email and password are required' })

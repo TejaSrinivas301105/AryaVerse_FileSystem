@@ -34,7 +34,7 @@ router.post('/approve', authenticate, adminOnly, admin_approve)
 router.post('/reject', authenticate, adminOnly, admin_reject)
 router.delete('/file', authenticate, adminOnly, delete_file)
 router.post('/folder', authenticate, create_folder)
-router.get('/folders', authenticate, adminOnly, get_folders)
+router.get('/folders', authenticate, get_folders)
 
 // Employee + Admin routes
 router.post('/request-access', authenticate, request_access)

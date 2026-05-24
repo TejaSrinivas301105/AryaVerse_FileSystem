@@ -14,7 +14,8 @@ const app = express()
 const defaultAllowedOrigins = [
     'http://localhost:5173',
     'https://beingcosmic.com',
-    'https://www.beingcosmic.com'
+    'https://www.beingcosmic.com',
+    'https://api.beingcosmic.com'
 ]
 
 const envAllowedOrigins = (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || '')

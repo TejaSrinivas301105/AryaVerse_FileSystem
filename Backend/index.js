@@ -116,7 +116,11 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date() })
 })
 
-app.listen(3000, () => {
-    console.log('Server running on port 3000')
-    testSupabaseConnection()
+const port = Number(process.env.PORT || 3000)
+
+app.listen(port, () => {
+    console.log(`Server running on port ${port}`)
+    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+        testSupabaseConnection()
+    }
 })

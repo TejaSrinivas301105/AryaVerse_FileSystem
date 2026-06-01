@@ -10,16 +10,31 @@ const sanitizeFilename = (name) => {
     return `${base}${ext.toLowerCase()}`
 }
 
-const getStoragePath = () => path.resolve(process.env.LOCAL_STORAGE_PATH || './uploads')
-const STORAGE_PATH = getStoragePath()
-if (!fs.existsSync(STORAGE_PATH)) fs.mkdirSync(STORAGE_PATH, { recursive: true })
+const isVercel = Boolean(process.env.VERCEL)
 
-// multer — disk storage, up to 100 files, 100MB each
+let STORAGE_PATH = null
+if (!isVercel) {
+    STORAGE_PATH = path.resolve(process.env.LOCAL_STORAGE_PATH || './uploads')
+    if (!fs.existsSync(STORAGE_PATH)) fs.mkdirSync(STORAGE_PATH, { recursive: true })
+}
+
 export const upload = multer({
-    storage: multer.diskStorage({
-        destination: (req, file, cb) => cb(null, STORAGE_PATH),
-        filename: (req, file, cb) => cb(null, `${Date.now()}_${sanitizeFilename(file.originalname)}`)
-    }),
+    storage: isVercel
+        ? multer.memoryStorage()
+        : multer.diskStorage({
+            destination: (req, file, cb) => {
+                let relativePaths = []
+                try { relativePaths = req.body.relative_paths ? JSON.parse(req.body.relative_paths) : [] } catch {}
+                const idx = req.files ? req.files.length : 0
+                const relPath = relativePaths[idx] || ''
+                const subDir = relPath.includes('/')
+                    ? path.join(STORAGE_PATH, relPath.split('/').slice(0, -1).join('/'))
+                    : STORAGE_PATH
+                fs.mkdirSync(subDir, { recursive: true })
+                cb(null, subDir)
+            },
+            filename: (req, file, cb) => cb(null, sanitizeFilename(file.originalname))
+        }),
     limits: { fileSize: 100 * 1024 * 1024 },
 })
 
@@ -80,8 +95,21 @@ export const File_upload = async (req, res) => {
             }
         }
 
-        const diskFilename = req.files[i].filename
-        const fileUrl = `${process.env.SERVER_BASE_URL || 'http://localhost:3000'}/files/${diskFilename}`
+        let fileUrl
+        if (isVercel) {
+            const diskFilename = `${Date.now()}_${sanitizeFilename(originalname)}`
+            const { error: storageErr } = await supabase.storage
+                .from('uploads')
+                .upload(diskFilename, req.files[i].buffer, { contentType: req.files[i].mimetype, upsert: false })
+            if (storageErr) { results.push({ file_name: originalname, error: storageErr.message }); continue }
+            const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(diskFilename)
+            fileUrl = urlData.publicUrl
+        } else {
+            const diskFilename = relativePath
+                ? path.join(...relativePath.split('/').slice(0, -1), sanitizeFilename(originalname)).replace(/\\/g, '/')
+                : sanitizeFilename(originalname)
+            fileUrl = `${process.env.SERVER_BASE_URL || 'http://localhost:3000'}/files/${diskFilename}`
+        }
 
         const { data, error } = await supabase
             .from('files')
@@ -350,9 +378,13 @@ export const delete_file = async (req, res) => {
 
     if (fileErr || !file) return res.status(404).json({ error: 'File not found' })
 
-    const filename = file.file_url.split('/files/').pop()
-    const filePath = path.join(STORAGE_PATH, filename)
-    if (filename && fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    const fileRelPath = file.file_url.split('/files/').pop()
+    if (isVercel) {
+        await supabase.storage.from('uploads').remove([fileRelPath])
+    } else {
+        const filePath = path.join(STORAGE_PATH, ...fileRelPath.split('/'))
+        if (fileRelPath && fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    }
 
     const { error } = await supabase.from('files').delete().eq('id', file_id)
     if (error) return res.status(500).json({ error: error.message })

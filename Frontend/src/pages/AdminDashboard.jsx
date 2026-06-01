@@ -103,15 +103,23 @@ export default function AdminDashboard() {
         fetchRequests()
     }
 
+    const [codeContent, setCodeContent] = useState(null)
+
     const handlePreview = async (file_id) => {
         const data = await accessFile(file_id)
         if (data.error) return setMsg(data.error)
         setPreviewFile(data.file)
+        setCodeContent(null)
         setMsg('')
+        if (isCode(data.file.file_url)) {
+            const text = await fetch(data.file.file_url).then(r => r.text()).catch(() => null)
+            setCodeContent(text)
+        }
     }
 
     const isImage = (url) => /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url)
     const isVideo = (url) => /\.(mp4|webm|ogg)$/i.test(url)
+    const isCode = (url) => /\.(html?|css|js|ts|jsx|tsx|json|xml|csv|txt|md|py|java|c|cpp|sh)$/i.test(url)
 
     const getFileIcon = (name) => {
         const ext = name.split('.').pop().toLowerCase()
@@ -293,7 +301,12 @@ export default function AdminDashboard() {
                     <div className="preview">
                         {isImage(previewFile.file_url) && <img src={previewFile.file_url} alt={previewFile.file_name} />}
                         {isVideo(previewFile.file_url) && <video controls src={previewFile.file_url} />}
-                        {!isImage(previewFile.file_url) && !isVideo(previewFile.file_url) && (
+                        {isCode(previewFile.file_url) && (
+                            <pre style={{textAlign:'left',overflowX:'auto',background:'#1e1e1e',color:'#d4d4d4',padding:'1rem',borderRadius:'6px',maxHeight:'500px',overflowY:'auto'}}>
+                                {codeContent ?? 'Loading...'}
+                            </pre>
+                        )}
+                        {!isImage(previewFile.file_url) && !isVideo(previewFile.file_url) && !isCode(previewFile.file_url) && (
                             <div className="file-link">
                                 <p>Preview not available.</p>
                                 <a href={previewFile.file_url} target="_blank" rel="noreferrer">Open File</a>

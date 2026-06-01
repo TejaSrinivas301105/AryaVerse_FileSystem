@@ -66,15 +66,23 @@ export default function EmployeeDashboard() {
         setFileId('')
     }
 
+    const [codeContent, setCodeContent] = useState(null)
+
     const handleAccessFile = async (file_id) => {
         const data = await accessFile(file_id)
         if (data.error) return setMsg(data.error)
         setAccessedFile(data.file)
+        setCodeContent(null)
         setMsg('')
+        if (isCode(data.file.file_url)) {
+            const text = await fetch(data.file.file_url).then(r => r.text()).catch(() => null)
+            setCodeContent(text)
+        }
     }
 
     const isImage = (url) => /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url)
     const isVideo = (url) => /\.(mp4|webm|ogg)$/i.test(url)
+    const isCode = (url) => /\.(html?|css|js|ts|jsx|tsx|json|xml|csv|txt|md|py|java|c|cpp|sh)$/i.test(url)
 
     const getFileIcon = (name) => {
         const ext = name.split('.').pop().toLowerCase()
@@ -280,7 +288,12 @@ export default function EmployeeDashboard() {
                         {isVideo(accessedFile.file_url) && (
                             <video controls src={accessedFile.file_url} />
                         )}
-                        {!isImage(accessedFile.file_url) && !isVideo(accessedFile.file_url) && (
+                        {isCode(accessedFile.file_url) && (
+                            <pre style={{textAlign:'left',overflowX:'auto',background:'#1e1e1e',color:'#d4d4d4',padding:'1rem',borderRadius:'6px',maxHeight:'500px',overflowY:'auto'}}>
+                                {codeContent ?? 'Loading...'}
+                            </pre>
+                        )}
+                        {!isImage(accessedFile.file_url) && !isVideo(accessedFile.file_url) && !isCode(accessedFile.file_url) && (
                             <div className="file-link">
                                 <p>Preview not available for this file type.</p>
                                 <a href={accessedFile.file_url} target="_blank" rel="noreferrer">Open File</a>

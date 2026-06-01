@@ -14,7 +14,9 @@ const app = express()
 const defaultAllowedOrigins = [
     'http://localhost:5173',
     'https://beingcosmic.com',
-    'https://www.beingcosmic.com'
+    'https://www.beingcosmic.com',
+    'https://api.beingcosmic.com',
+    
 ]
 
 const envAllowedOrigins = (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || '')
@@ -38,8 +40,14 @@ app.use(express.json())
 // Serve uploaded files from local disk
 const uploadsDir = process.env.LOCAL_STORAGE_PATH
     ? path.resolve(process.env.LOCAL_STORAGE_PATH)
-    : path.join(__dirname, 'uploads')
-app.use('/files', express.static(uploadsDir))
+    : path.resolve(__dirname, '../../uploads')
+app.use('/files', (req, res, next) => {
+    if (req.path.match(/\.html?$/i)) {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+        res.setHeader('Content-Disposition', 'inline')
+    }
+    next()
+}, express.static(uploadsDir))
 
 
 // Auth routes — strict: 10 attempts per 15 min per IP
@@ -93,6 +101,14 @@ async function testSupabaseConnection() {
         console.log('Supabase connected successfully')
     }
 }
+
+app.get('/', (req, res) => {
+    res.json({ status: 'ok', message: 'beingcosmic API is running' })
+})
+
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date() })
+})
 
 app.listen(3000, () => {
     console.log('Server running on port 3000')

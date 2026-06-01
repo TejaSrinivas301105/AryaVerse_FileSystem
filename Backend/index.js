@@ -15,8 +15,7 @@ const defaultAllowedOrigins = [
     'http://localhost:5173',
     'https://beingcosmic.com',
     'https://www.beingcosmic.com',
-    'https://api.beingcosmic.com',
-    
+    'https://api.beingcosmic.com'
 ]
 
 const envAllowedOrigins = (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || '')
@@ -36,6 +35,13 @@ app.use(cors({
     credentials: true
 }))
 app.use(express.json())
+app.set('trust proxy', 1)
+
+// Skip ngrok browser warning
+app.use((req, res, next) => {
+    req.headers['ngrok-skip-browser-warning'] = 'true'
+    next()
+})
 
 // Serve uploaded files from local disk
 const uploadsDir = process.env.LOCAL_STORAGE_PATH

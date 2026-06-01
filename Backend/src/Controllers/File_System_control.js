@@ -118,12 +118,11 @@ export const File_upload = async (req, res) => {
             .single()
 
         if (!error && data) {
-            // Auto-grant permanent access to the uploader
-            await supabase.from('file_access').insert([{
+            await supabase.from('file_access').upsert([{
                 user_id: admin_id,
                 file_id: data.id,
                 expires_at: new Date('2099-12-31').toISOString()
-            }])
+            }], { onConflict: 'user_id,file_id' })
         }
 
         results.push(error ? { file_name: originalname, error: error.message } : data)
